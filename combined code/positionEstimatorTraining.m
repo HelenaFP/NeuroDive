@@ -1,5 +1,15 @@
 function [modelParameters] = positionEstimatorTraining(training_data)
     modelParameters = struct;
+    
+    % find and remove low firing neurons from training data, and store
+    % these neurons (indices) to be removed from test data
+    low_fire_n = get_low_firing_neurons(training_data);
+    modelParameters.low_fire_n = low_fire_n;
+    for n = 1:length(training_data)
+        for k = 1:8
+            training_data(n,k).spikes(low_fire_n,:) = [];
+        end
+    end
 
     [coef, intercept] = calculate_lda(training_data);
     modelParameters.lda_coef = coef;
@@ -25,6 +35,26 @@ function [modelParameters] = positionEstimatorTraining(training_data)
     end
 end
 
+function low_fire_n = get_low_firing_neurons(training_data)
+    firing_rate = [];
+    firing_rate_angle = [];
+    for k = 1:8 
+        for n = 1:length(training_data)
+            firing_rate = [firing_rate mean(training_data(n,k).spikes(:,:),2)];
+        end
+        firing_rate_angle =[firing_rate_angle mean(firing_rate,2)];
+    end
+    average_firing_rate = mean(firing_rate_angle,2); 
+    var_firing_rate = std(firing_rate_angle,0,2);
+
+    % find the n neurons with the lowest average firing rate 
+    [low_rates,low_avg_n] = mink(average_firing_rate,5);
+    % find the n neurons with the lowest varying firing rate
+    [low_var, low_var_n] = mink(var_firing_rate,5);
+    % find m neurons which meet both conditions, where m<=n
+    low_fire_n = intersect(low_avg_n,low_var_n);
+    display(low_fire_n);
+end
 
 function [coef, intercept] = calculate_lda(training_data)
 
@@ -102,8 +132,9 @@ function [loadings, mean_data, n_components] = calculate_pca(train_data, reachin
     max_size = max(sizes, [], 'all');
     
     % Calculate average spikes per neuron for that reaching angle
-    average_spike_data = zeros(98, max_size);
-    counts = zeros(98, max_size);
+    n_neurons = size(train_data(1,1).spikes,1);
+    average_spike_data = zeros(n_neurons, max_size);
+    counts = zeros(n_neurons, max_size);
     for t = 1:size(train_data, 1)
         spikes = train_data(t, reaching_angle).spikes;
         average_spike_data(:, 1:size(spikes, 2)) = average_spike_data(:, 1:size(spikes, 2)) + spikes;

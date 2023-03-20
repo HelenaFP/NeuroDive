@@ -1,4 +1,8 @@
 function [x, y, modelParameters] = positionEstimator(test_data, modelParameters)
+     
+  % remove low firing neurons from test_data
+  low_fire_n = modelParameters.low_fire_n;
+  test_data.spikes(low_fire_n,:) = [];
 
   names = ["angle1" "angle2" "angle3" "angle4" "angle5" "angle6" "angle7" "angle8"];
   if ~isempty(test_data.decodedHandPos)
@@ -53,6 +57,3 @@ function [reaching_angle] = lda_classifier(data, modelParameters)
     [~, reaching_angle] = max(scores, [], 2);
     
 end
-  
-
-
