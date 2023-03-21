@@ -6,6 +6,7 @@
 
 function RMSE = testFunction_for_students_MTb(teamName)
 
+tic
 load monkeydata_training.mat
 
 % Set random number generator
@@ -15,10 +16,9 @@ ix = randperm(length(trial));
 % addpath(teamName);
 
 % Select training and testing data (you can choose to split your data in a different way if you wish)
-% trainingData = trial(ix(1:50),:);
-% testData = trial(ix(51:end),:);
-trainingData = trial(ix(1:70),:);
-testData = trial(ix(71:end),:);
+trainingData = trial(ix(1:50),:);
+testData = trial(ix(51:end),:);
+
 
 fprintf('Testing the continuous position estimator...')
 
@@ -73,5 +73,6 @@ legend('Decoded Position', 'Actual Position')
 RMSE = sqrt(meanSqError/n_predictions) 
 
 % rmpath(genpath(teamName))
+elapsed_time=toc
 
 end

@@ -1,267 +1,139 @@
 function [modelParameters] = positionEstimatorTraining(training_data)
-
-    [trials_per_angle, nangles] = size(training_data);
     modelParameters = struct;
     
-%%%%%%%%%%%%%%%%%%%%%%%% PUT IN NEW BINS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    
-    train_new_bins = struct;
-    
-    new_bin = 10; % ms
-    
-    for i = 1:nangles
-        for j = 1:trials_per_angle
-
-            all_spikes = training_data(j,i).spikes; % spikes is no neurons x no time points
-            nneurons = size(all_spikes,1);
-            t_length = size(all_spikes,2);
-            t_new = 1: new_bin : t_length; % New time point array
-            handPos = training_data(j,i).handPos(1:2,:);
-            spikes = zeros(nneurons,numel(t_new)-1);
-
-            for k = 1 : numel(t_new) - 1 % get rid of the paddded bin
-                spikes(:,k) = sum(all_spikes(:,t_new(k):t_new(k+1)-1),2);
-            end
-
-            spikes = sqrt(spikes);
-            binned_handPos = handPos(:,t_new);
-            
-            train_new_bins(j,i).spikes = spikes;
-            train_new_bins(j,i).handPos = binned_handPos;
-        end
-    end
-    
-    
-%%%%%%%%%%%%%%%%%%%%%%%%% FIRING RATES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
-    
-% Using a gaussian kernel
-
-[train_rates] = gaussian(train_new_bins,new_bin);
-
-
-    
-%%%%%%%%%%%%%%%%%%%%%%%%%%%% REMOVE LOW FIRING %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
-
     % find and remove low firing neurons from training data, and store
     % these neurons (indices) to be removed from test data
-    min_fire = 5.0;
-    [low_fire_n,modelParameters] = get_low_firing_neurons(modelParameters,train_rates,min_fire);
+    low_fire_n = get_low_firing_neurons(training_data);
     modelParameters.low_fire_n = low_fire_n;
-    for n = 1:trials_per_angle
-        for k = 1:nangles
-            train_rates(n,k).spikes(low_fire_n,:) = [];
-            train_rates(n,k).rates(low_fire_n,:) = [];
+    for n = 1:length(training_data)
+        for k = 1:8
+            training_data(n,k).spikes(low_fire_n,:) = [];
         end
     end
-    
-    
-%%%%%%%%%%%%%%%%%%%%%%%%%%% PCA - LDA FOR ANGLE CLASSIFICATION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+    [coef, intercept] = calculate_lda(training_data);
+    modelParameters.lda_coef = coef;
+    modelParameters.lda_intercept = intercept;
 
-    nLDA = 5;
+    n_components = 13;
     names = ["angle1" "angle2" "angle3" "angle4" "angle5" "angle6" "angle7" "angle8"];
-    
-    
-
-    [W,opt_proj] = calculate_lda(train_rates,nLDA,new_bin);
-    %[coef, intercept] = calculate_lda(train_rates,nPCA,nLDA);
-    %modelParameters.lda_coef = coef;
-    %modelParameters.lda_intercept = intercept;
-    modelParameters.ldaW = W;
-    modelParameters.lda_nlda = nLDA;
-    modelParameters.lda_opt_proj = opt_proj;
-    
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%% LINEAR REGRESSION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-% Gaussian kernel full set of spikes. Binned every 20 secs
-
-    train_new_bins2 = struct;
-    
-    new_bin2 = 20; % ms
-    
-    for i = 1:nangles
-        for j = 1:trials_per_angle
-
-            all_spikes = training_data(j,i).spikes; % spikes is no neurons x no time points
-            nneurons = size(all_spikes,1);
-            t_length = size(all_spikes,2);
-            t_new = 1: new_bin2 : t_length; % New time point array
-            handPos = training_data(j,i).handPos(1:2,:);
-            spikes = zeros(nneurons,numel(t_new)-1);
-
-            for k = 1 : numel(t_new) - 1 % get rid of the paddded bin
-                spikes(:,k) = sum(all_spikes(:,t_new(k):t_new(k+1)-1),2);
-            end
-
-            spikes = sqrt(spikes);
-            binned_handPos = handPos(:,t_new);
-            
-            train_new_bins2(j,i).spikes = spikes;
-            train_new_bins2(j,i).handPos = binned_handPos;
-        end
-    end
-
-
-
-[train_full] = gaussian(train_new_bins2,new_bin2);
-
-    n_PCA_components = 25;
-    for reaching_angle = 1:nangles
+    for reaching_angle = 1:8
         modelParameters.(names(reaching_angle)) = struct;
-        [loadings, mean_data] = calculate_pca(train_full, reaching_angle, n_PCA_components);
+        [loadings, mean_data, n_components] = calculate_pca(training_data, reaching_angle, n_components);
         modelParameters.(names(reaching_angle)).pca.loadings = loadings;
         modelParameters.(names(reaching_angle)).pca.mean = mean_data;
-        modelParameters.(names(reaching_angle)).pca.n_components = n_PCA_components;
+        modelParameters.(names(reaching_angle)).pca.n_components = n_components;
 
-        [beta] = linear_regression(train_full, reaching_angle, loadings, mean_data,20.0);
-        modelParameters.(names(reaching_angle)).lre = beta;
+        [max_x, max_y] = get_max(training_data, reaching_angle);
+        modelParameters.(names(reaching_angle)).max_x = max_x;
+        modelParameters.(names(reaching_angle)).max_y = max_y;
+        [beta_vel,beta_pos] = linear_regression(training_data, reaching_angle, loadings, mean_data, max_x, max_y);
+        modelParameters.(names(reaching_angle)).lre.vel = beta_vel;
+        modelParameters.(names(reaching_angle)).lre.pos = beta_pos;
     end
 end
 
-function [lowFire,modelParameters] = get_low_firing_neurons(modelParameters,training_data,min_fire)  
+function low_fire_n = get_low_firing_neurons(training_data)
+    firing_rate = [];
+    firing_rate_angle = [];
+    for k = 1:8 
+        for n = 1:length(training_data)
+            firing_rate = [firing_rate mean(training_data(n,k).spikes(:,:),2)];
+        end
+        firing_rate_angle =[firing_rate_angle mean(firing_rate,2)];
+    end
+    average_firing_rate = mean(firing_rate_angle,2); 
+    var_firing_rate = std(firing_rate_angle,0,2);
+
+    % find the n neurons with the lowest average firing rate 
+    [low_rates,low_avg_n] = mink(average_firing_rate,5);
+    % find the n neurons with the lowest varying firing rate
+    [low_var, low_var_n] = mink(var_firing_rate,5);
+    % find m neurons which meet both conditions, where m<=n
+    low_fire_n = intersect(low_avg_n,low_var_n);
+    %display(low_fire_n);
+end
+
+
+% Code for this function was adapted from 
+% https://github.com/scikit-learn/scikit-learn/blob/9aaed4987/sklearn/discriminant_analysis.py#L173
+% using the svd solver, as standard eigenvalue solver doesn't work due to
+% non-invertible matrices
+function [coef, intercept] = calculate_lda(training_data)
+
+    X = [];
+    y = [];
     
-
-    %low_fire_n = {};
-    
-    nNeurons = length(training_data(1,1).spikes);
-
-    [ntrials,nangles] = size(training_data);
-
-    angle_rates = zeros(nNeurons,ntrials*nangles);
-
-    % calculate which neurons to remove based on up to 560 first!
-      
-    k = 1;
-    for i = 1:ntrials    
-        for j=1:nangles
-            angle_rates(:,k) = mean(training_data(i,j).rates,2);
-            k = k + 1;
+    for tr = 1:size(training_data, 1)
+        for direc = 1:8 
+            X = [X mean(training_data(tr, direc).spikes(:, 1:320), 2)];
+            y = [y direc];
         end
     end
     
+    X = X';
+    y = y';
+
+    tol = 1e-4;
+    [n_samples, n_features] = size(X);
+    n_classes = 8;
+    priors = ones(1, 8) / 8;
     
-    angle_rates_all = mean(angle_rates,2);
-
-    lowFire = [];
-    for x = 1: nNeurons
-        if angle_rates_all(x) < min_fire
-            lowFire = [lowFire,x];
-
-        end
+    class_labels = unique(y);
+    means = zeros(length(class_labels), n_features);
+    for i = 1:length(class_labels)
+        c = class_labels(i);
+        X_c = X(y == c, :);
+        means(i, :) = mean(X_c);
     end
     
-    modelParameters.lowFire = lowFire; 
+    Xc = zeros(size(X));
+    from = 1;
+    until = size(X, 1)/8;
+    for i = 1:length(class_labels)
+        c = class_labels(i);
+        Xg = X(y == c, :);
+        Xc(from:until, :) = bsxfun(@minus, Xg, means(i, :));
+        from = until+1;
+        until= until+size(X, 1)/8;
+    end
+
+    xbar = priors * means;
+    std_dev = std(Xc);
+    fac = 1 / (n_samples - n_classes);
     
+    X = sqrt(fac)*(Xc./std_dev);
+    
+    [U, S, Vt] = svd(X, "vector");
+    Vt= Vt';
+    S = S';
+    rank = sum(S > tol, 'all');
+    scalings = (Vt(1:rank, :) ./ std_dev)' ./ S(1:rank);
+    
+    fac = 1 / (n_classes -1);
+    X = ((sqrt(n_samples * priors * fac)) .* ((means - xbar)'))' * scalings;
+    
+    [~, S, Vt] = svd(X, "vector");
+    S = S';
+
+    rank = sum(S > tol * S(1), 'all');
+    scalings = scalings * Vt(:, 1:rank);
+    coef = (means - xbar) * scalings;
+    intercept = -0.5 * sum(coef.^2, 2)' + log(priors);
+    coef = coef * scalings';
+    intercept = intercept - xbar * coef';
 end
 
-function [W,opt] = calculate_lda(training_data,nLDA,new_bin)
-    
-    ntrials = size(training_data, 1);
-    trimmer = 320/new_bin - 1; % make the trajectories the same length
-    X = zeros([size(training_data(1,1).rates,1)*trimmer,ntrials*8]);
-    
-    
-    
-    nNeurons = size(training_data(1,1).rates,1);
-    
-        % need to get (neurons x time)x trial
-    for i = 1: 8
-        for j = 1: ntrials
-            for k = 1: trimmer
-                X(nNeurons*(k-1)+1:nNeurons*k,ntrials*(i-1)+j) = training_data(j,i).rates(:,k);     
-            end
-        end
-    end
-    
-    % Scatter matrices
-    mi = zeros(size(X,1),8);
-    
-    for i = 1: 8
-        mi(:,i) =  mean(X(:,ntrials*(i-1)+1:i*ntrials),2);
-    end
-    
-    % Scatter between classes matrix
-    sb = (mi - mean(X,2))*(mi - mean(X,2))';
-    
-    % Scatter within class matrix
-    
-    sw = zeros(size(sb));
-    
-    for i=1:8
-        sw = sw + (X-mi(:,i))*(X-mi(:,i))';
-    end       
-    
-    % PCA components
-    
-    thresh_var = 0.99;
-    
-    [PC, ~, nPCA] = get_pca(X, thresh_var);
-    
-   
-    [eVeLDA, eVaLDA] = eig(((PC'*sw*PC)^-1 )*(PC'*sb*PC));
-    [~,sort_inds] = sort(diag(eVaLDA),'descend');
-    
-    % Get most important projections of PCA onto LDA
-    opt = PC*eVeLDA(:,sort_inds(1:nLDA));
-    
-    % Most Discriminant Feature
-    W = opt'*(X - mean(X,2));
-    
-    colors = {[1 0 0],[0 1 1],[1 1 0],[0 0 0],[0 0.75 0.75],[1 0 1],[0 1 0],[1 0.50 0.25]};
-    figure
-    hold on
-    for i=1:8
-        plot(W(1,ntrials*(i-1)+1:i*ntrials),W(2,ntrials*(i-1)+1:i*ntrials),'o','Color',colors{i},'MarkerFaceColor',colors{i},'MarkerEdgeColor','k')
-        hold on
-    end
-
-    legend('1','2','3','4','5','6','7','8');
-
-end
-
-function [PC, evals, nPCA] = get_pca(X, thresh_var)
-
-    X_centred = (X - mean(X,2))./std(X,0,2);
-    % calculate the covariance matrix
-    covX = cov(X);
-    % get eigenvalues and eigenvectors
-    [evects, evals] = eig(covX);
-    % Eigenpairs in descending order
-    [evals,sorted] = sort(diag(evals),'descend');
-    evects = evects(:,sorted);
-    % Get PCs
-    PC = X_centred*evects;
-    
-    % Extract the important PCs. 0.95 threshold
-    
-    total_eval = sum(evals);
-    
-    min_total = thresh_var*total_eval;
-    
-    curr_total = 0;
-    
-    nPCA = 0;
-    while curr_total < min_total
-        nPCA = nPCA + 1;
-        curr_total = curr_total + evals(nPCA);
-    end
-        
-    PC = PC(:,1:nPCA);
-    
-    % normalisation
-    PC = PC./sqrt(sum(PC.^2));
-
-end
-    
-function [loadings, mean_data] = calculate_pca(train_data, reaching_angle, n_components)
+% Principal component analysis based on average spikes per neuron for a
+% given reaching angle
+function [loadings, mean_data, n_components] = calculate_pca(train_data, reaching_angle, n_components)
 
     sizes = zeros(100, 1);
-    for i = 1:size(train_data, 1)   % loop over number of trials
-        sizes(i, reaching_angle) = size(train_data(i,reaching_angle).spikes, 2); % get the number of time points in each trial
+    for i = 1:size(train_data, 1)
+        sizes(i, reaching_angle) = size(train_data(i,reaching_angle).spikes, 2);
     end
     
-    max_size = max(sizes, [], 'all');   % record the highest number of spikes/time points for a trial
+    max_size = max(sizes, [], 'all');
     
     % Calculate average spikes per neuron for that reaching angle
     n_neurons = size(train_data(1,1).spikes,1);
@@ -286,51 +158,59 @@ function [loadings, mean_data] = calculate_pca(train_data, reaching_angle, n_com
     % eigenvectors and eigenvalues
     [eigenvectors, eigenvalues] = eig(C);
     
-    % select largest 32 eigenvalues and corresponding eigenvectors
+    % select largest eigenvalues and corresponding eigenvectors
     [eigenvalues, sorted_ids] = sort(diag(eigenvalues),'descend');
     eigenvectors = eigenvectors(:, sorted_ids);
     loadings = eigenvectors(:, 1:n_components);
 
 end
 
-% beta are the coefficients of the regression equation
-function [beta] = linear_regression(train_data, reaching_angle, loadings, mean_data,new_bin)
-    % Create training data  
-    
-    spike_data_320 = [];
+% Principal Component Regression 
+% using principal compoenents extracted from past 300 ms of spike data
+% and most recent decoded hand position
+function [beta_vel,beta_pos] = linear_regression(train_data, reaching_angle, loadings, mean_data, max_x, max_y)
+
+    % Create training data
+    spike_data_300 = [];
     position = [];
+    velocity = [];
+    vel= [];
+    bin = 20;
     for trial_nb = 1:size(train_data,1)
         spikes = train_data(trial_nb, reaching_angle).spikes;
-        for time = 1:size(spikes,2)-1-320/new_bin
-             % get the 320ms of time data, shifting by 20ms each time
-             spikes_320ms = spikes(:,time:time-1+320/new_bin);
-             spikes_320ms = (spikes_320ms' - mean_data)';
-             spikes_320ms = loadings'*spikes_320ms;
-               
-             % get the final hand position after time interval
-             hand_position_x = train_data(trial_nb, reaching_angle).handPos(1,time:time-1+320/new_bin);
-             hand_position_y = train_data(trial_nb, reaching_angle).handPos(2,time:time-1+320/new_bin);
-             hand_position = [hand_position_x; hand_position_y];
-                
-             % add window of spikes to spike_data_300
-             spike_data_320 = [spike_data_320, spikes_320ms];
-             position = [position, hand_position];
+        for time = 1:20:size(train_data(trial_nb, reaching_angle).spikes,2)
+            if size(spikes,2)>(320+time-1)
+                spikes_300ms = spikes(:,time:300+time-1);
+                spikes_300ms = (spikes_300ms' - mean_data)';
+                spikes_300ms = reshape(loadings'*spikes_300ms,[],1);
+                if time == 20
+                    hand_position_x_past = train_data(trial_nb, reaching_angle).handPos(1,1)/max_x;
+                    hand_position_y_past = train_data(trial_nb, reaching_angle).handPos(2,1)/max_y;
+                else
+                    hand_position_x_past = train_data(trial_nb, reaching_angle).handPos(1,300+time-20)/max_x;
+                    hand_position_y_past = train_data(trial_nb, reaching_angle).handPos(2,300+time-20)/max_y;
+                end
+                spikes_300ms = [spikes_300ms; hand_position_x_past; hand_position_y_past];
+                hand_position_x = train_data(trial_nb, reaching_angle).handPos(1,300+time);
+                hand_position_y = train_data(trial_nb, reaching_angle).handPos(2,300+time);
+                hand_position = [hand_position_x; hand_position_y];
+
+                vel_x = (train_data(trial_nb, reaching_angle).handPos(1,time+bin+299)-train_data(trial_nb, reaching_angle).handPos(1,300+time))/0.02;
+                vel_y = (train_data(trial_nb, reaching_angle).handPos(2,time+bin+299)-train_data(trial_nb, reaching_angle).handPos(2,300+time))/0.02;
+                vel = [vel_x;vel_y];
+
+                spike_data_300 = [spike_data_300, spikes_300ms];
+                position = [position, hand_position];
+                velocity = [velocity, vel];
+            end
         end
     end
 
-    X= spike_data_320';
-    
-    y = position';
+    X= spike_data_300';
+    y1 = position';
+    y2 = velocity';
 
-    [m,~] = size(X);
-    
-    
-    clear spike_data_320
-    clear position
-    clear hand_position_x
-    clear hand_position_y
-    clear spikes_320ms
-    
+    [m,n] = size(X);
     
     % Adding a column of ones to X to account for the intercept term
     X = [ones(m,1) X];
@@ -338,45 +218,25 @@ function [beta] = linear_regression(train_data, reaching_angle, loadings, mean_d
     % Calculate the Moore-Penrose pseudoinverse of X
     X_pinv = pinv(X);
     % Calculate the beta coefficients
-    beta = X_pinv * y;
+    beta_pos = X_pinv * y1;
+    beta_vel = X_pinv * y2;
    
 end
 
+% Get maximum x and y positions from all trials for a given reaching angle
+function [max_x, max_y] = get_max(training_data, reaching_angle)
 
-function [train_rates] = gaussian(train_new,new_bin)
-
-train_rates = struct;
-    
-    scale_win = 50;
-    
-    std = scale_win/new_bin;
-    w = 10*std;
-    
-    alpha = (w-1)/(2*std);
-    temp1 = -(w-1)/2 : (w-1)/2;
-    gausstemp = exp((-1/2) * (alpha * temp1/((w-1)/2)) .^ 2)';
-    gaussian_window = gausstemp/sum(gausstemp);
-    
-    for i = 1: size(train_new,2)
-
-        for j = 1:size(train_new,1)
-            
-            conv_rates = zeros(size(train_new(j,i).spikes,1),size(train_new(j,i).spikes,2));
-            
-            for k = 1: size(train_new(j,i).spikes,1)
-                
-                % COnvolve with gaussian window
-                conv_rates(k,:) = conv(train_new(j,i).spikes(k,:),gaussian_window,'same')/(new_bin/1000);
-            end
-            
-            train_rates(j,i).rates = conv_rates;
-            train_rates(j,i).handPos = train_new(j,i).handPos;
-            train_rates(j,i).spikes = train_new(j,i).spikes;
+    max_x = 0;
+    for tr = 1: size(training_data, 1)
+        if abs(training_data(tr,reaching_angle).handPos(1,size(training_data(tr,reaching_angle).handPos, 2))) > max_x
+            max_x = abs(training_data(tr,reaching_angle).handPos(1,size(training_data(tr,reaching_angle).handPos, 2)));
         end
-    end  
-
+    end
+    
+    max_y = 0;
+    for tr = 1: size(training_data, 1)
+        if abs(training_data(tr,reaching_angle).handPos(2,size(training_data(tr,reaching_angle).handPos, 2))) > max_y
+            max_y = abs(training_data(tr,reaching_angle).handPos(2,size(training_data(tr,reaching_angle).handPos, 2)));
+        end
+    end
 end
-
-
-
-
