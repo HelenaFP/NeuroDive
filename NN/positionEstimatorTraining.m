@@ -73,7 +73,14 @@ function [modelParameters] = positionEstimatorTraining(training_data)
 
                 spikes_neuron = [];
 
-                edges = 300:bin_width:t_length;
+                edges = 320:bin_width:t_length;
+
+                if edges(length(edges)) ~= t_length
+                    edges(length(edges)+1) = t_length;
+                end
+
+                bins = diff(edges);
+
 
 
                 % binned spike counts for each neuron
@@ -85,7 +92,9 @@ function [modelParameters] = positionEstimatorTraining(training_data)
 
                 end
 
-                spikes_after_320 = [spikes_after_320 spikes_neuron];
+                avg_spike_neuron = spikes_neuron./bins;
+
+                spikes_after_320 = [spikes_after_320 avg_spike_neuron];
                 
                 all_pos = training_data(tr,angle).handPos(1:2,:);
 

@@ -43,6 +43,8 @@ function [x, y, modelParameters] = positionEstimator(test_data, modelParameters)
 
       edges = 320:bin_width:t_length;
 
+      bins = diff(edges);
+
 
       spikes_after_320 = [];
       
@@ -54,6 +56,8 @@ function [x, y, modelParameters] = positionEstimator(test_data, modelParameters)
           spikes_after_320 = [spikes_after_320;binned_spikes];
 
       end
+
+      spikes_after_320 = spikes_after_320./bins;
 
       net_positions = netr(spikes_after_320);
 
