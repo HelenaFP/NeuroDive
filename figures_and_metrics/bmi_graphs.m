@@ -18,7 +18,7 @@ yyaxis left
 plot(pca,rmse_pca,'Marker','x','LineWidth',1.5);
 hold on;
 plot(pca,rmse_pca_old,'Marker','x','LineWidth',1.5);
-ylabel('RMSE')
+ylabel('RMSE (cm)')
 hold on;
 yyaxis right
 plot(pca,t_pca,'Marker','x','LineWidth',1.5);
@@ -26,7 +26,7 @@ hold on;
 plot(pca,t_pca_old,'Marker','x','LineWidth',1.5);
 legend('New Velocity Estimator with Past Input','Old Velocity Estimator')
 xlabel('PCA components')
-ylabel('Run time/s')
+ylabel('Run time (s)')
 title('Number of PCA components vs. RMSE and Run Time')
 fontsize(gca, 15,'points')
 hold off
@@ -45,7 +45,7 @@ yyaxis left
 plot(pca,rmse_pca_0,'Marker','x','LineWidth',1.5);
 hold on;
 plot(pca,rmse_pca_9,'Marker','x','LineWidth',1.5);
-ylabel('RMSE')
+ylabel('RMSE (cm)')
 hold on;
 yyaxis right
 plot(pca,t_pca_0,'Marker','x','LineWidth',1.5);
@@ -53,7 +53,7 @@ hold on;
 plot(pca,t_pca_9,'Marker','x','LineWidth',1.5);
 legend('No neurons removed','9 neurons removed')
 xlabel('PCA components')
-ylabel('Run time/s')
+ylabel('Run time (s)')
 title('Number of PCA components vs. RMSE and Run Time')
 fontsize(gca, 15,'points')
 hold off
@@ -74,7 +74,7 @@ plot(neurons,rmse_n,'Marker','x','LineWidth',1.5);
 hold on;
 plot(neurons,rmse_n_22,'Marker','x','LineWidth',1.5);
 hold on;
-ylabel('RMSE')
+ylabel('RMSE (cm)')
 
 yyaxis right
 plot(neurons,t_n,'Marker','x','LineWidth',1.5);
@@ -83,7 +83,7 @@ plot(neurons,t_n_22,'Marker','x','LineWidth',1.5);
 hold on;
 legend('PCA Components=13','PCA Components=22')
 xlabel('Number of neurons removed')
-ylabel('Run time/s')
+ylabel('Run time (s)')
 title('Number of Neurons Removed vs. RMSE and Run Time')
 fontsize(gca, 15,'points')
 hold off
@@ -97,13 +97,13 @@ t_window = [300 290 280 270 260 250 240 230 220 200 150];
 figure(4);
 yyaxis left
 plot(t_window,rmse_win,'Marker','x','LineWidth',1.5);
-ylabel('RMSE')
+ylabel('RMSE (cm)')
 
 yyaxis right
 plot(t_window,t_win,'Marker','x','LineWidth',1.5);
 %legend('RMSE','Run Time')
-xlabel('Window Length/samples')
-ylabel('Run time/s')
+xlabel('Window Length (ms)')
+ylabel('Run time (s)')
 title('Window Length vs. RMSE and Run Time')
 fontsize(gca, 15,'points')
 hold off
